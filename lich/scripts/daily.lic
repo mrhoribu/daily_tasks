@@ -1,0 +1,8 @@
+10.times do 
+  if dothistimeout("info", 3, /Level:/)
+    $stdout.write(":ok >> #{Char.name}")
+    fput("exit") 
+  end
+end
+
+Thread.main.raise(":err >> unknown result from #{Char.name}")

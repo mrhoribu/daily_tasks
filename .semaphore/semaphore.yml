@@ -1,0 +1,52 @@
+# Use the latest stable version of Semaphore 2.0 YML syntax:
+version: v1.0
+
+# Name your pipeline. In case you connect multiple pipelines with promotions,
+# the name will help you differentiate between, for example, a CI build phase
+# and delivery phases.
+name: gemstone.daily
+# An agent defines the environment in which your code runs.
+# It is a combination of one of available machine types and operating
+# system images.
+# See https://docs.semaphoreci.com/article/20-machine-types
+# and https://docs.semaphoreci.com/article/32-ubuntu-1804-image
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+execution_time_limit:
+  minutes: 10
+
+# Blocks are the heart of a pipeline and are executed sequentially.
+# Each block has a task that defines one or more jobs. Jobs define the
+# commands to execute.
+# See https://docs.semaphoreci.com/article/62-concepts
+blocks:
+  - name: login
+    task:
+      secrets:
+        - name: login.dat
+      jobs:
+        - name: login
+          commands:
+          # Checkout code from Git repository. This step is mandatory if the
+          # job is to work with your code.
+          # Optionally you may use --use-cache flag to avoid roundtrip to
+          # remote repository.
+          # See https://docs.semaphoreci.com/article/54-toolbox-reference#libcheckout
+          - checkout
+          # Restore dependencies from cache.
+          # Read about caching: https://docs.semaphoreci.com/article/54-toolbox-reference#cache
+          - cache restore gems-$SEMAPHORE_GIT_BRANCH-$(checksum Gemfile.lock),gems-$SEMAPHORE_GIT_BRANCH-,gems-master-
+          # Set Ruby version:
+          - sem-version ruby 2.6.0
+          # install the gems we need to run this in a CI env
+          # todo: figure out how to get caching + bundler to play nice with Lich
+          - gem install sqlite3 tty-command mechanize --no-document
+          # Store the latest version of dependencies in cache,
+          # to be used in next blocks and future workflows:
+          - cache store gems-$SEMAPHORE_GIT_BRANCH-$(checksum Gemfile.lock) vendor/bundle
+          # copy the secret file to our login folder
+          - cp ~/.lich/entry.dat lich/data/
+          - bin/login --rewards --login

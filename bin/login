@@ -1,0 +1,72 @@
+#!/usr/bin/env ruby
+require "tty-command"
+require_relative "../play_net/rewards"
+require_relative "../util/opts"
+
+module Daily
+  MAX_RETRIES = 3
+
+  def self._load_entry_data()
+    File.open("lich/data/entry.dat", 'r') do |f| 
+      Marshal.load(f.read.unpack('m').first) 
+    end
+  end
+
+  def self.entry_data
+    @entry_data ||= _load_entry_data().reduce({}) do |acc, entry|
+      account = entry.fetch(:user_id).downcase
+      acc[account] ||= []
+      acc[account] << entry
+      acc
+    end
+  end
+  ##
+  ## prepare login command
+  ##
+  def self.login(char, tries: 0)
+    begin
+      TTY::Command.new(timeout: 30, uuid: char).run <<-LOGIN
+        ruby lich/lich.rb \
+          --login #{char} \
+          --detachable-client=0 \
+          --start-scripts=daily \
+          --without-frontend
+      LOGIN
+    rescue TTY::Command::TimeoutExceeded
+      puts ":timeout >> #{char}\n"
+      unless tries > MAX_RETRIES
+        sleep tries * 3
+        login(char, tries: tries + 1)
+      end
+    end
+  end
+
+  def self.login_all_characters(chars)
+    Thread.new do 
+      chars.map do |char| Daily.login(char.fetch(:char_name)) end
+    end
+  end
+
+  def self.claim_all_login_boosts()
+    entry_data
+      .values
+      .map do |account| login_all_characters(account) end
+      .each(&:join).map(&:value)
+  end
+
+  def self.claim_all_account_rewards()
+    entry_data
+      .map do |account, chars| {account: account, password: chars.first.fetch(:password)} end
+      .map do |account| Rewards.claim(**account) end
+  end
+
+  def self.main()
+    fail "no commands given"    if Opts.to_h.empty?
+    # run logins in parallel by account
+    claim_all_login_boosts()    if Opts.login
+    # run the account rewards in parallel by account
+    claim_all_account_rewards() if Opts.rewards
+  end
+
+  Daily.main()
+end
